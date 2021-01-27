@@ -1,0 +1,6 @@
+# model files
+pth/
+
+# log files
+log/
+*.log
