@@ -7,3 +7,5 @@ pth/
 log/
 *.log
 
+# sh files
+*.sh

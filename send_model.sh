@@ -1,1 +1,0 @@
-scp -P 8025 /home/workspace/model_optimization/pth/mobilenet_float.onnx pi@166.104.140.128:/home/pi/projects/onnx
