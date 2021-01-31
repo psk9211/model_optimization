@@ -1,6 +1,9 @@
 # model files
 pth/
+*.onnx
+*.pth
 
 # log files
 log/
 *.log
+

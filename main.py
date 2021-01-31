@@ -41,8 +41,8 @@ def args_parsing():
     parser = argparse.ArgumentParser(description="Model optimization test tool")
 
     # Basic
-    parser.add_argument('--data-path', type=str, 
-                        help='dataset path',
+    parser.add_argument('--data-dir', type=str, 
+                        help='dataset directory',
                         default='/home/workspace/datasets/imagenet2012/imagenet_1k')
     parser.add_argument('--root-dir', type=str,
                         help='Project root directory',
@@ -142,7 +142,7 @@ def main(args):
     # Model Setting
     model_name = MobileNetV2()
 
-    data_loader, data_loader_test = prepare_data_loaders(args.data_path, 
+    data_loader, data_loader_test = prepare_data_loaders(args.data_dir, 
                 train_batch_size=args.train_batch_size, eval_batch_size=args.eval_batch_size)
     criterion = nn.CrossEntropyLoss()
 
