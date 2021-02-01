@@ -120,21 +120,25 @@ def evaluate(ort_session, criterion, data_loader, neval_batches):
 """
 
 
-def onnxruntime_quantize(model, model_dir, data_dir, return_model=True):
+def onnxruntime_quantize(model, model_dir, data_dir, return_session=True):
     dr = MobileNetV2DataReader(data_dir)
 
-    static = onnxruntime.quantization.quantize_static(model, model_dir+'onnxruntime_static.onnx', dr)
-    dynamic = onnxruntime.quantization.quantize_dynamic(model, model_dir+'onnxruntime_dynamic.onnx')
-    qat = onnxruntime.quantization.quantize_qat(model, model_dir+'onnxruntime_qat.onnx')
+    onnxruntime.quantization.quantize_static(model, model_dir+'onnxruntime_static.onnx', dr)
+    onnxruntime.quantization.quantize_dynamic(model, model_dir+'onnxruntime_dynamic.onnx')
+    onnxruntime.quantization.quantize_qat(model, model_dir+'onnxruntime_qat.onnx')
 
-    if return_model:
-        return static, dynamic, qat
+    if return_session:
+        static_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_static.onnx')
+        dynamic_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_dynamic.onnx')
+        qat_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_qat.onnx')
+        
+        return static_sess, dynamic_sess, qat_sess
 
 
 
 def main(args):
 
-    onnx_model_fixed = args.model_dir + "mobilenet_float.onnx"
+    #onnx_model = args.model_dir + "mobilenet_float.onnx"
     onnx_model = args.model_dir + 'mobilenetv2_torch170_pretrain_float.onnx'
     model = onnx.load(onnx_model)
     onnx.checker.check_model(model)
@@ -164,8 +168,8 @@ def main(args):
     
     top1, top5, elapsed = evaluate(ort_session, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
     num_images = num_eval_batches * eval_batch_size
-    mainlogger.info('Evaluation accuracy on %d images, %2.2f'%(num_images, top1.avg))
-    mainlogger.info('Elapsed time: %3.0f ms' % (elapsed/num_images*1000))
+    mainlogger.info(f'Evaluation accuracy on {num_images} images, top1: {top1.avg:.2f} / top5: {top5.avg:.2f}')
+    mainlogger.info(f'Elapsed time: {elapsed/num_images*1000:.2f}ms\n')
 
 
     ##################################
@@ -243,25 +247,47 @@ def main(args):
     """
 
     # Quantize ONNX model
-    static, dynamic, qat = onnxruntime_quantize(onnx_model, args.model_dir, args.data_dir, return_model=True)
-    static_sess = onnxruntime.InferenceSession(static)
-    dynamic_sess = onnxruntime.InferenceSession(dynamic)
-    qat_sess = onnxruntime.InferenceSession(qat)
+    static_sess, dynamic_sess, qat_sess = onnxruntime_quantize(onnx_model, args.model_dir, args.data_dir, return_session=True)
+    
+    iter = 10
+    top1_toal = 0
+    top5_toal = 0 
+    time_total = 0
+    for i in range(iter):
+        top1, top5, time = evaluate(static_sess, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)  
+        top1_toal += top1.avg
+        top5_toal += top5.avg
+        time_total += time
 
-    top1, top5, time = evaluate(static_sess, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
-    mainlogger.info(f'Model: {static_sess}')
-    mainlogger.info(f'Evaluation accuracy on {num_eval_batches * args.eval_batch_size} images, top1: {top1.avg:.2f} / top5: {top5.avg:.2f}')
-    mainlogger.info(f'Elapsed time: {time/num_images*1000:.2f}ms\n')
+    mainlogger.info(f'Model: Static Quant')
+    mainlogger.info(f'Evaluation accuracy on {num_eval_batches * args.eval_batch_size} images, top1: {top1_toal/iter:.2f} / top5: {top5_toal/iter:.2f}')
+    mainlogger.info(f'Elapsed time: {time_total/num_images*1000/iter:.2f}ms\n')
 
-    top1, top5, time = evaluate(dynamic_sess, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
-    mainlogger.info(f'Model: {dynamic_sess}')
-    mainlogger.info(f'Evaluation accuracy on {num_eval_batches * args.eval_batch_size} images, top1: {top1.avg:.2f} / top5: {top5.avg:.2f}')
-    mainlogger.info(f'Elapsed time: {time/num_images*1000:.2f}ms\n')
+    top1_toal = 0
+    top5_toal = 0 
+    time_total = 0
+    for i in range(iter):
+        top1, top5, time = evaluate(dynamic_sess, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
+        top1_toal += top1.avg
+        top5_toal += top5.avg
+        time_total += time
 
-    top1, top5, time = evaluate(qat_sess, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
-    mainlogger.info(f'Model: {qat_sess}')
-    mainlogger.info(f'Evaluation accuracy on {num_eval_batches * args.eval_batch_size} images, top1: {top1.avg:.2f} / top5: {top5.avg:.2f}')
-    mainlogger.info(f'Elapsed time: {time/num_images*1000:.2f}ms\n')
+    mainlogger.info(f'Model: Dynamic Quant')
+    mainlogger.info(f'Evaluation accuracy on {num_eval_batches * args.eval_batch_size} images, top1: {top1_toal/iter:.2f} / top5: {top5_toal/iter:.2f}')
+    mainlogger.info(f'Elapsed time: {time_total/num_images*1000/iter:.2f}ms\n')
+
+
+    top1_toal = 0
+    top5_toal = 0 
+    time_total = 0
+    for i in range(iter):
+        top1, top5, time = evaluate(qat_sess, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
+        top1_toal += top1.avg
+        top5_toal += top5.avg
+        time_total += time
+
+    mainlogger.info(f'Evaluation accuracy on {num_eval_batches * args.eval_batch_size} images, top1: {top1_toal/iter:.2f} / top5: {top5_toal/iter:.2f}')
+    mainlogger.info(f'Elapsed time: {time_total/num_images*1000/iter:.2f}ms\n')
     
 
 
