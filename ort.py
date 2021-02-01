@@ -7,6 +7,7 @@ import datetime
 
 import onnx
 import onnxruntime
+from onnxruntime.quantization import QuantType
 import onnxoptimizer
 import onnxsim
 
@@ -120,31 +121,80 @@ def evaluate(ort_session, criterion, data_loader, neval_batches):
 """
 
 
-def onnxruntime_quantize(model, model_dir, data_dir, return_session=True):
-    dr = MobileNetV2DataReader(data_dir)
+def onnxruntime_quantize(model, model_dir, data_dir, return_session=True, do_quant=True):
+    if do_quant:
+        
+        # Static
+        dr = MobileNetV2DataReader(data_dir)
+        onnxruntime.quantization.quantize_static(model, model_dir+'onnxruntime_static.onnx', dr)
+        #onnxruntime.quantization.quantize_static(model, model_dir+'onnxruntime_static_aui8_wi8.onnx', dr, activation_type=QuantType.QUInt8, weight_type=QuantType.QInt8)
+        
+        # Dynamic
+        onnxruntime.quantization.quantize_dynamic(model, model_dir+'onnxruntime_dynamic.onnx')
+        onnxruntime.quantization.quantize_dynamic(model, model_dir+'onnxruntime_dynamic_aui8_wi8.onnx', activation_type=QuantType.QUInt8, weight_type=QuantType.QInt8)
+        onnxruntime.quantization.quantize_dynamic(model, model_dir+'onnxruntime_dynamic_ai8_wui8.onnx', activation_type=QuantType.QInt8, weight_type=QuantType.QUInt8)
+        onnxruntime.quantization.quantize_dynamic(model, model_dir+'onnxruntime_dynamic_ai8_wi8.onnx', activation_type=QuantType.QInt8, weight_type=QuantType.QInt8)
 
-    onnxruntime.quantization.quantize_static(model, model_dir+'onnxruntime_static.onnx', dr)
-    onnxruntime.quantization.quantize_dynamic(model, model_dir+'onnxruntime_dynamic.onnx')
-    onnxruntime.quantization.quantize_qat(model, model_dir+'onnxruntime_qat.onnx')
+        # QAT        
+        onnxruntime.quantization.quantize_qat(model, model_dir+'onnxruntime_qat.onnx')
+        onnxruntime.quantization.quantize_qat(model, model_dir+'onnxruntime_qat_aui8_wi8.onnx', activation_type=QuantType.QUInt8, weight_type=QuantType.QInt8)
+        onnxruntime.quantization.quantize_qat(model, model_dir+'onnxruntime_qat_ai8_wui8.onnx', activation_type=QuantType.QInt8, weight_type=QuantType.QUInt8)
+        onnxruntime.quantization.quantize_qat(model, model_dir+'onnxruntime_qat_ai8_wi8.onnx', activation_type=QuantType.QInt8, weight_type=QuantType.QInt8)
 
     if return_session:
-        static_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_static.onnx')
-        dynamic_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_dynamic.onnx')
-        qat_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_qat.onnx')
-        
-        return static_sess, dynamic_sess, qat_sess
+        '''
+        2021.02.01
+        ConvInteger doesn't supporst Int8, it only supports uint8 activation, uint8 weight.
+        '''
+
+        static = []
+        static_aui8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_static.onnx')
+        #static_aui8_wi8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_static_aui8_wi8.onnx')
+        static.append(static_aui8_wui8_sess)
+
+        dynamic = []
+        dynamic_aui8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_dynamic.onnx')
+        dynamic.append(dynamic_aui8_wui8_sess)
+        '''
+        dynamic_aui8_wi8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_dynamic_aui8_wi8.onnx')
+        dynamic.append(dynamic_aui8_wi8_sess)
+        dynamic_ai8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_dynamic_ai8_wui8.onnx')
+        dynamic.append(dynamic_ai8_wui8_sess)
+        dynamic_ai8_wi8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_dynamic_ai8_wi8.onnx')
+        dynamic.append(dynamic_ai8_wi8_sess)
+        '''
+
+        qat = []
+        qat_aui8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_qat.onnx')
+        qat.append(qat_aui8_wui8_sess)
+        '''
+        qat_aui8_wi8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_qat_aui8_wi8.onnx')
+        qat.append(qat_aui8_wi8_sess)
+        qat_ai8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_qat_ai8_wui8.onnx')
+        qat.append(qat_ai8_wui8_sess)
+        qat_ai8_wi8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_qat_ai8_wi8.onnx')
+        qat.append(qat_ai8_wi8_sess)
+        '''
+
+        return static, dynamic, qat
+
 
 
 
 def main(args):
 
-    #onnx_model = args.model_dir + "mobilenet_float.onnx"
-    onnx_model = args.model_dir + 'mobilenetv2_torch170_pretrain_float.onnx'
+    onnx_model = args.model_dir + "mobilenet_float.onnx"
+    #onnx_model = args.model_dir + 'mobilenetv2_torch170_pretrain_float.onnx'
     model = onnx.load(onnx_model)
     onnx.checker.check_model(model)
     
     mainlogger.debug("Model Info")
     mainlogger.debug(onnx.helper.printable_graph(model.graph))
+
+    # Set session options
+    sess_options = onnxruntime.SessionOptions()
+    sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+    sess_options.intra_op_num_threads=1
 
     ort_session = onnxruntime.InferenceSession(onnx_model)
     
@@ -165,23 +215,35 @@ def main(args):
     #mainlogger.debug('Input Info: ', input_name, input_shape, input_type)
     #mainlogger.debug('Label Info: ', label_name, label_shape, label_type)
 
-    
+    '''
     top1, top5, elapsed = evaluate(ort_session, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
     num_images = num_eval_batches * eval_batch_size
     mainlogger.info(f'Evaluation accuracy on {num_images} images, top1: {top1.avg:.2f} / top5: {top5.avg:.2f}')
     mainlogger.info(f'Elapsed time: {elapsed/num_images*1000:.2f}ms\n')
-
+    '''
 
     ##################################
-    # Optimize
+    # Quantization
     ##################################
+    static_sess, dynamic_sess, qat_sess = onnxruntime_quantize(onnx_model, args.model_dir, args.data_dir, return_session=True, do_quant=False)
+
+    for sess in static_sess:
+        run_iterative_benchmark(model=sess, criterion=criterion, data_loader=data_loader_test, num_eval_batches=num_eval_batches, eval_batch_size=args.eval_batch_size, is_onnx=True, iter=10, name=f'Static Quant: {sess}')
+
+    for sess in dynamic_sess:   
+        run_iterative_benchmark(model=sess, criterion=criterion, data_loader=data_loader_test, num_eval_batches=num_eval_batches, eval_batch_size=args.eval_batch_size, is_onnx=True, iter=10, name=f'Dynamic Quant: {sess}')
+
+    for sess in dynamic_sess:
+        run_iterative_benchmark(model=sess, criterion=criterion, data_loader=data_loader_test, num_eval_batches=num_eval_batches, eval_batch_size=args.eval_batch_size, is_onnx=True, iter=10, name=f'QAT Quant: {sess}')
+
+
     """
     all_passes = onnxoptimizer.get_available_passes()
     print("\n\nAvailable optimization passes:")
     for p in all_passes:
         print(p)
     print()
-    """
+    
     
     inferred_model = onnx.shape_inference.infer_shapes(model)
     #print(inferred_model.graph.value_info)
@@ -218,7 +280,7 @@ def main(args):
 
     
 
-    """
+    
     ort_session = onnxruntime.InferenceSession(optimized_model)
     top1, top5, elapsed = evaluate(ort_session, criterion, data_loader_test, neval_batches=num_eval_batches)
     num_images = num_eval_batches * eval_batch_size
@@ -245,49 +307,6 @@ def main(args):
     mainlogger.info(onnx.helper.printable_graph(model_simp.graph))
     onnx.save(model_simp, args.model_dir+'simplified.onnx')
     """
-
-    # Quantize ONNX model
-    static_sess, dynamic_sess, qat_sess = onnxruntime_quantize(onnx_model, args.model_dir, args.data_dir, return_session=True)
-    
-    iter = 10
-    top1_toal = 0
-    top5_toal = 0 
-    time_total = 0
-    for i in range(iter):
-        top1, top5, time = evaluate(static_sess, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)  
-        top1_toal += top1.avg
-        top5_toal += top5.avg
-        time_total += time
-
-    mainlogger.info(f'Model: Static Quant')
-    mainlogger.info(f'Evaluation accuracy on {num_eval_batches * args.eval_batch_size} images, top1: {top1_toal/iter:.2f} / top5: {top5_toal/iter:.2f}')
-    mainlogger.info(f'Elapsed time: {time_total/num_images*1000/iter:.2f}ms\n')
-
-    top1_toal = 0
-    top5_toal = 0 
-    time_total = 0
-    for i in range(iter):
-        top1, top5, time = evaluate(dynamic_sess, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
-        top1_toal += top1.avg
-        top5_toal += top5.avg
-        time_total += time
-
-    mainlogger.info(f'Model: Dynamic Quant')
-    mainlogger.info(f'Evaluation accuracy on {num_eval_batches * args.eval_batch_size} images, top1: {top1_toal/iter:.2f} / top5: {top5_toal/iter:.2f}')
-    mainlogger.info(f'Elapsed time: {time_total/num_images*1000/iter:.2f}ms\n')
-
-
-    top1_toal = 0
-    top5_toal = 0 
-    time_total = 0
-    for i in range(iter):
-        top1, top5, time = evaluate(qat_sess, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
-        top1_toal += top1.avg
-        top5_toal += top5.avg
-        time_total += time
-
-    mainlogger.info(f'Evaluation accuracy on {num_eval_batches * args.eval_batch_size} images, top1: {top1_toal/iter:.2f} / top5: {top5_toal/iter:.2f}')
-    mainlogger.info(f'Elapsed time: {time_total/num_images*1000/iter:.2f}ms\n')
     
 
 

@@ -180,6 +180,25 @@ def run_benchmark(model_file, img_loader):
     return elapsed
 
 
+def run_iterative_benchmark(model, criterion, data_loader, num_eval_batches, eval_batch_size, is_onnx, name, iter=10):
+    top1_toal = 0
+    top5_toal = 0 
+    time_total = 0
+    for i in range(iter):
+        top1, top5, time = evaluate(model, criterion, data_loader, neval_batches=num_eval_batches, is_onnx=is_onnx)  
+        top1_toal += top1.avg
+        top5_toal += top5.avg
+        time_total += time
+
+    num_images = num_eval_batches * eval_batch_size
+    print(f'Model: {name}')
+    print(f'Average on {iter} times')
+    print(f'Evaluation accuracy on {num_eval_batches * eval_batch_size} images, top1: {top1_toal/iter:.2f} / top5: {top5_toal/iter:.2f}')
+    print(f'Elapsed time: {time_total/num_images*1000/iter:.2f}ms\n')
+
+
+
+
 def onnx_export(torch_model, onnx_model_name, random_input, opset_version=10, operator_export_type=torch.onnx.OperatorExportTypes.ONNX):
     batch_size = random_input.size()[0]
     torch.onnx.export(torch_model,               # model being run
