@@ -9,3 +9,6 @@ log/
 
 # sh files
 *.sh
+
+# profiling files
+*.json

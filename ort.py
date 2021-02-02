@@ -121,7 +121,7 @@ def evaluate(ort_session, criterion, data_loader, neval_batches):
 """
 
 
-def onnxruntime_quantize(model, model_dir, data_dir, return_session=True, do_quant=True):
+def onnxruntime_quantize(model, model_dir, data_dir, sess_options, return_session=True, do_quant=True):
     if do_quant:
         
         # Static
@@ -148,12 +148,12 @@ def onnxruntime_quantize(model, model_dir, data_dir, return_session=True, do_qua
         '''
 
         static = []
-        static_aui8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_static.onnx')
+        static_aui8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_static.onnx', sess_options)
         #static_aui8_wi8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_static_aui8_wi8.onnx')
         static.append(static_aui8_wui8_sess)
 
         dynamic = []
-        dynamic_aui8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_dynamic.onnx')
+        dynamic_aui8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_dynamic.onnx', sess_options)
         dynamic.append(dynamic_aui8_wui8_sess)
         '''
         dynamic_aui8_wi8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_dynamic_aui8_wi8.onnx')
@@ -165,7 +165,7 @@ def onnxruntime_quantize(model, model_dir, data_dir, return_session=True, do_qua
         '''
 
         qat = []
-        qat_aui8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_qat.onnx')
+        qat_aui8_wui8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_qat.onnx', sess_options)
         qat.append(qat_aui8_wui8_sess)
         '''
         qat_aui8_wi8_sess = onnxruntime.InferenceSession(model_dir+'onnxruntime_qat_aui8_wi8.onnx')
@@ -183,7 +183,8 @@ def onnxruntime_quantize(model, model_dir, data_dir, return_session=True, do_qua
 
 def main(args):
 
-    onnx_model = args.model_dir + "mobilenet_float.onnx"
+    #onnx_model = args.model_dir + "mobilenet_float.onnx"
+    onnx_model = args.model_dir + 'mobilenetv2-7.onnx'
     #onnx_model = args.model_dir + 'mobilenetv2_torch170_pretrain_float.onnx'
     model = onnx.load(onnx_model)
     onnx.checker.check_model(model)
@@ -194,9 +195,9 @@ def main(args):
     # Set session options
     sess_options = onnxruntime.SessionOptions()
     sess_options.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
-    sess_options.intra_op_num_threads=1
+    sess_options.enable_profiling = True
 
-    ort_session = onnxruntime.InferenceSession(onnx_model)
+    ort_session = onnxruntime.InferenceSession(onnx_model, sess_options)
     
     train_batch_size = 30
     eval_batch_size = 30
@@ -215,17 +216,17 @@ def main(args):
     #mainlogger.debug('Input Info: ', input_name, input_shape, input_type)
     #mainlogger.debug('Label Info: ', label_name, label_shape, label_type)
 
-    '''
+    
     top1, top5, elapsed = evaluate(ort_session, criterion, data_loader_test, neval_batches=num_eval_batches, is_onnx=True)
     num_images = num_eval_batches * eval_batch_size
     mainlogger.info(f'Evaluation accuracy on {num_images} images, top1: {top1.avg:.2f} / top5: {top5.avg:.2f}')
     mainlogger.info(f'Elapsed time: {elapsed/num_images*1000:.2f}ms\n')
+    
     '''
-
     ##################################
     # Quantization
     ##################################
-    static_sess, dynamic_sess, qat_sess = onnxruntime_quantize(onnx_model, args.model_dir, args.data_dir, return_session=True, do_quant=False)
+    static_sess, dynamic_sess, qat_sess = onnxruntime_quantize(onnx_model, args.model_dir, args.data_dir, sess_options, return_session=True, do_quant=False)
 
     for sess in static_sess:
         run_iterative_benchmark(model=sess, criterion=criterion, data_loader=data_loader_test, num_eval_batches=num_eval_batches, eval_batch_size=args.eval_batch_size, is_onnx=True, iter=10, name=f'Static Quant: {sess}')
@@ -235,6 +236,13 @@ def main(args):
 
     for sess in dynamic_sess:
         run_iterative_benchmark(model=sess, criterion=criterion, data_loader=data_loader_test, num_eval_batches=num_eval_batches, eval_batch_size=args.eval_batch_size, is_onnx=True, iter=10, name=f'QAT Quant: {sess}')
+    '''
+
+    e2e_mobilev2_q = onnxruntime.InferenceSession('/home/workspace/model_optimization/pth/mobilenetv2-7.quant.onnx', sess_options)
+    run_iterative_benchmark(model=e2e_mobilev2_q, criterion=criterion, data_loader=data_loader_test, num_eval_batches=num_eval_batches, eval_batch_size=args.eval_batch_size, is_onnx=True, iter=10, name=f'MobileNetV2 static')
+    e2e_res50_q = onnxruntime.InferenceSession('/home/workspace/model_optimization/pth/resnet50-v1-9-quant.onnx', sess_options)
+    run_iterative_benchmark(model=e2e_res50_q, criterion=criterion, data_loader=data_loader_test, num_eval_batches=num_eval_batches, eval_batch_size=args.eval_batch_size, is_onnx=True, iter=10, name=f'ResNet50 static')
+
 
 
     """
