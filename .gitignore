@@ -12,3 +12,6 @@ log/
 
 # profiling files
 *.json
+
+# test files
+*.ipynb

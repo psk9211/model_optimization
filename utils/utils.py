@@ -218,7 +218,7 @@ def onnx_export(torch_model, onnx_model_name, random_input, opset_version=10, op
 def to_numpy(tensor):
     return tensor.detach().cpu().numpy() if tensor.requires_grad else tensor.cpu().numpy()
 
-
+"""
 def preprocess_func(images_folder, height, width, size_limit=0):
     '''
     Loads a batch of images and preprocess them
@@ -249,6 +249,45 @@ def preprocess_func(images_folder, height, width, size_limit=0):
         np.array([123.68, 116.78, 103.94], dtype=np.float32)
         nhwc_data = np.expand_dims(input_data, axis=0)
         nchw_data = nhwc_data.transpose(0, 3, 1, 2)  # ONNX Runtime standard
+        unconcatenated_batch_data.append(nchw_data)
+    batch_data = np.concatenate(np.expand_dims(unconcatenated_batch_data, axis=0), axis=0)
+    return batch_data
+"""
+
+
+def preprocess_func(images_folder, height, width, size_limit=0):
+    '''
+    Loads a batch of images and preprocess them
+    parameter images_folder: path to folder storing images
+    parameter height: image height in pixels
+    parameter width: image width in pixels
+    parameter size_limit: number of images to load. Default is 0 which means all images are picked.
+    return: list of matrices characterizing multiple images
+    '''
+    image_names = os.listdir(images_folder)
+    if size_limit > 0 and len(image_names) >= size_limit:
+        batch_filenames = [image_names[i] for i in range(size_limit)]
+    else:
+        batch_filenames = image_names
+    unconcatenated_batch_data = []
+
+    for image_name in batch_filenames:
+        image_filepath = images_folder + '/' + image_name
+        pillow_img = Image.new("RGB", (width, height))
+        pillow_img.paste(Image.open(image_filepath).resize((width, height)))
+        #input_data = np.float32(pillow_img) - np.array([123.68, 116.78, 103.94], dtype=np.float32)
+        
+        transform = transforms.Compose([
+                transforms.Resize(256),
+                transforms.CenterCrop(224),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
+        input_data = to_numpy(transform(pillow_img))
+        
+        nchw_data = np.expand_dims(input_data, axis=0)
+        #nchw_data = nhwc_data.transpose(0, 3, 1, 2)  # ONNX Runtime standard
+        
         unconcatenated_batch_data.append(nchw_data)
     batch_data = np.concatenate(np.expand_dims(unconcatenated_batch_data, axis=0), axis=0)
     return batch_data
